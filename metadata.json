@@ -1,0 +1,6 @@
+{
+  "name": "Dual AI Chat",
+  "description": "Jednoczesny czat z Gemini i ChatGPT, bezpośrednie porównywanie odpowiedzi i wzajemna optymalizacja wyników.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
