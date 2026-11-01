@@ -6,6 +6,11 @@ import android.content.ContentUris
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.net.Uri
+import android.net.Uri as AndroidUri
+import org.json.JSONObject
+import org.json.JSONArray
+import java.net.HttpURLConnection
+import java.net.URL
 import android.os.Build
 import android.os.Bundle
 import android.provider.MediaStore
@@ -49,6 +54,11 @@ private fun CleanerScreen() {
   var groups by remember { mutableStateOf<List<DuplicateGroup>>(emptyList()) }
   var selected by remember { mutableStateOf<Set<String>>(emptySet()) }
   var scanned by remember { mutableIntStateOf(0) }
+  var cloudSession by remember { mutableStateOf("") }
+  var cloudStatus by remember { mutableStateOf("Połącz konto Google i wklej kod sesji.") }
+  var cloudItems by remember { mutableStateOf<List<String>>(emptyList()) }
+  var cloudBusy by remember { mutableStateOf(false) }
+  var cloudTab by remember { mutableIntStateOf(0) }
 
   val trashLauncher = rememberLauncherForActivityResult(ActivityResultContracts.StartIntentSenderForResult()) { result ->
     status = if (result.resultCode == android.app.Activity.RESULT_OK) "Android potwierdził przeniesienie wybranych zdjęć do kosza." else "Operacja została anulowana."
@@ -174,8 +184,38 @@ private fun CleanerScreen() {
       }
       Spacer(Modifier.height(10.dp))
       Text("Ograniczenie: aplikacja nie skanuje zdjęć dostępnych wyłącznie w chmurze Google Photos. Google udostępnia je aplikacjom przez wybór użytkownika, a nie pełny dostęp do całej biblioteki.", style = MaterialTheme.typography.bodySmall)
+      Divider(Modifier.padding(vertical = 12.dp))
+      Text("Konta Google", style = MaterialTheme.typography.titleLarge)
+      Text("Połącz konto Google. Po zgodzie Google wyświetli kod sesji. Wklej go poniżej.")
+      Button(onClick = { context.startActivity(Intent(Intent.ACTION_VIEW, AndroidUri.parse(WORKER_URL + "/auth/google"))) }, modifier = Modifier.fillMaxWidth()) { Text("Połącz konto Google") }
+      OutlinedTextField(value = cloudSession, onValueChange = { cloudSession = it.trim() }, label = { Text("Kod sesji Google") }, modifier = Modifier.fillMaxWidth(), singleLine = true)
+      TabRow(selectedTabIndex = cloudTab) { Tab(selected = cloudTab == 0, onClick = { cloudTab = 0 }, text = { Text("Drive") }); Tab(selected = cloudTab == 1, onClick = { cloudTab = 1 }, text = { Text("Gmail") }) }
+      Button(onClick = {
+        if (cloudSession.isBlank()) { cloudStatus = "Najpierw wklej kod sesji."; return@Button }
+        cloudBusy = true
+        scope.launch { try {
+          val data = withContext(Dispatchers.IO) { fetchCloud(cloudSession, if (cloudTab == 0) "/api/drive/files" else "/api/gmail/messages") }
+          cloudItems = if (cloudTab == 0) { val arr = data.optJSONArray("files") ?: JSONArray(); (0 until arr.length()).map { i -> val f=arr.getJSONObject(i); f.optString("name")+" | "+f.optString("size","?")+" B | MD5: "+f.optString("md5Checksum","brak") } } else { val arr=data.optJSONArray("messages") ?: JSONArray(); (0 until arr.length()).map { i -> "Wiadomość ID: "+arr.getJSONObject(i).optString("id") } }
+          cloudStatus = "Pobrano "+cloudItems.size+" pozycji. Niczego nie usunięto."
+        } catch(e:Exception) { cloudStatus = "Błąd: "+(e.message ?: "nieznany") } finally { cloudBusy=false } }
+      }, enabled = !cloudBusy, modifier = Modifier.fillMaxWidth()) { Text(if (cloudBusy) "Pobieranie..." else "Pobierz listę") }
+      Text(cloudStatus, style = MaterialTheme.typography.bodySmall)
+      cloudItems.forEach { Text(it, style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(vertical = 3.dp)) }
+      Text("Podgląd list Drive i Gmail. Usuwanie nie jest automatyczne.", style = MaterialTheme.typography.bodySmall)
     }
   }
+}
+
+private const val WORKER_URL = "https://google-drive-cleaner-ai.arobert9944.workers.dev"
+
+private fun fetchCloud(session: String, path: String): JSONObject {
+  val c = URL(WORKER_URL + path).openConnection() as HttpURLConnection
+  c.requestMethod = "GET"; c.connectTimeout = 15000; c.readTimeout = 20000
+  c.setRequestProperty("Authorization", "Bearer " + session)
+  val status = c.responseCode
+  val body = (if (status in 200..299) c.inputStream else c.errorStream).bufferedReader().use { it.readText() }
+  if (status !in 200..299) throw IllegalStateException("HTTP " + status + ": " + body)
+  return JSONObject(body)
 }
 
 private fun scanPhotos(context: android.content.Context): Pair<Int, List<DuplicateGroup>> {
