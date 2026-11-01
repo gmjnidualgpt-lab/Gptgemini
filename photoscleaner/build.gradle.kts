@@ -5,7 +5,7 @@ plugins {
 
 android {
   namespace = "com.mostnowy.photoscleaner"
-  compileSdk { version = release(36) { minorApiLevel = 1 } }
+  compileSdk = 36
   defaultConfig {
     applicationId = "com.mostnowy.photoscleaner"
     minSdk = 30
