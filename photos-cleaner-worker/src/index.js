@@ -50,7 +50,7 @@ export default {
     return json({results});
    }
    if(request.method==="POST" && p==="/api/gmail/trash") {
-    const d=await request.json(); if(!Array.isArray(d.ids)||!d.ids.length||d.ids.length>100) return json({error:"invalid_ids"},400);
+    const d=await request.json(); if(!Array.isArray(d.ids)||!d.ids.length||d.ids.length>10) return json({error:"invalid_ids"},400);
     const results=[]; for(const id of d.ids){if(typeof id!=="string"||!/^[A-Za-z0-9_-]+$/.test(id)){results.push({id,ok:false});continue;} const r=await api(env,session,"/gmail/v1/users/me/messages/"+id+"/trash",{method:"POST"});results.push({id,ok:r.ok});}
     return json({results});
    }
