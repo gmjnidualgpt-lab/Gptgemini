@@ -39,13 +39,13 @@ export default {
    const session=request.headers.get("authorization")?.replace(/^Bearer\s+/i,"");
    if(!session) return json({error:"missing_session"},401);
    if(request.method==="GET" && p==="/api/drive/files") return api(env,session,"/drive/v3/files?"+new URLSearchParams({pageSize:"100",orderBy:"name",fields:"files(id,name,mimeType,size,md5Checksum,trashed,webViewLink),nextPageToken",q:"trashed=false"}));
-   if(request.method==="GET" && p==="/api/gmail/messages") return api(env,session,"/gmail/v1/users/me/messages?"+new URLSearchParams({maxResults:"50",q:"in:anywhere -in:trash"}));
+   if(request.method==="GET" && p==="/api/gmail/messages") return api(env,session,"/gmail/v1/users/me/messages?"+new URLSearchParams({maxResults:"10",q:"in:anywhere -in:trash"}));
    if(request.method==="GET" && p==="/api/gmail/message") {
     const id=u.searchParams.get("id"); if(!id||!/^[A-Za-z0-9_-]+$/.test(id)) return json({error:"invalid_id"},400);
     return api(env,session,"/gmail/v1/users/me/messages/"+id+"?format=metadata&metadataHeaders=From&metadataHeaders=Subject&metadataHeaders=Date");
    }
    if(request.method==="POST" && p==="/api/drive/trash") {
-    const d=await request.json(); if(!Array.isArray(d.ids)||!d.ids.length||d.ids.length>100) return json({error:"invalid_ids"},400);
+    const d=await request.json(); if(!Array.isArray(d.ids)||!d.ids.length||d.ids.length>10) return json({error:"invalid_ids"},400);
     const results=[]; for(const id of d.ids){if(typeof id!=="string"||!/^[A-Za-z0-9_-]+$/.test(id)){results.push({id,ok:false});continue;} const r=await api(env,session,"/drive/v3/files/"+id,{method:"PATCH",headers:{"content-type":"application/json"},body:JSON.stringify({trashed:true})});results.push({id,ok:r.ok});}
     return json({results});
    }
