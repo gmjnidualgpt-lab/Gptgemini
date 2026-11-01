@@ -25,3 +25,4 @@ dependencyResolutionManagement {
 rootProject.name = "Dual AI Chat"
 
 include(":app")
+include(":photoscleaner")
