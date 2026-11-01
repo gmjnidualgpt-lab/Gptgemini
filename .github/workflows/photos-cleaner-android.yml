@@ -2,7 +2,7 @@ name: Build Photos Cleaner APK
 
 on:
   push:
-    branches: [ "test/chatgpt-write-access" ]
+    branches: [ "test/chatgpt-write-access", "photos-cleaner-build" ]
   pull_request:
     branches: [ "main" ]
   workflow_dispatch:
@@ -24,7 +24,7 @@ jobs:
       - name: Set up Android SDK
         uses: android-actions/setup-android@v3
         with:
-          packages: "platform-tools platforms;android-36-ext1 build-tools;36.0.0"
+          packages: "platform-tools platforms;android-36 build-tools;36.0.0"
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v4
         with:
