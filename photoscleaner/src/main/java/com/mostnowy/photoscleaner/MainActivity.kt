@@ -272,18 +272,24 @@ private fun CleanerScreen() {
 private const val WORKER_URL = "https://google-drive-cleaner-ai.arobert9944.workers.dev"
 
 private fun trashCloud(session: String, path: String, ids: List<String>): JSONObject {
-  val c = URL(WORKER_URL + path).openConnection() as HttpURLConnection
-  c.requestMethod = "POST"
-  c.connectTimeout = 15000
-  c.readTimeout = 60000
-  c.doOutput = true
-  c.setRequestProperty("Authorization", "Bearer " + session)
-  c.setRequestProperty("Content-Type", "application/json")
-  c.outputStream.use { it.write(JSONObject().put("ids", JSONArray(ids)).toString().toByteArray(Charsets.UTF_8)) }
-  val status = c.responseCode
-  val body = (if (status in 200..299) c.inputStream else c.errorStream).bufferedReader().use { it.readText() }
-  if (status !in 200..299) throw IllegalStateException("HTTP " + status + ": " + body)
-  return JSONObject(body)
+  // Keep each Worker invocation small: Cloudflare counts every Google API call as a subrequest.
+  val combined = JSONArray()
+  ids.chunked(10).forEach { batch ->
+    val c = URL(WORKER_URL + path).openConnection() as HttpURLConnection
+    c.requestMethod = "POST"
+    c.connectTimeout = 15000
+    c.readTimeout = 60000
+    c.doOutput = true
+    c.setRequestProperty("Authorization", "Bearer " + session)
+    c.setRequestProperty("Content-Type", "application/json")
+    c.outputStream.use { it.write(JSONObject().put("ids", JSONArray(batch)).toString().toByteArray(Charsets.UTF_8)) }
+    val status = c.responseCode
+    val body = (if (status in 200..299) c.inputStream else c.errorStream).bufferedReader().use { it.readText() }
+    if (status !in 200..299) throw IllegalStateException("HTTP " + status + ": " + body)
+    val results = JSONObject(body).optJSONArray("results") ?: JSONArray()
+    for (i in 0 until results.length()) combined.put(results.getJSONObject(i))
+  }
+  return JSONObject().put("results", combined)
 }
 
 private fun fetchCloud(session: String, path: String): JSONObject {
