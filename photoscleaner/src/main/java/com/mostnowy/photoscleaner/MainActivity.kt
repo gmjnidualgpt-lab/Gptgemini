@@ -22,8 +22,7 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.*
 import androidx.compose.ui.layout.ContentScale
 import coil.compose.AsyncImage
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
@@ -119,7 +118,7 @@ private fun CleanerScreen() {
   }
 
   Scaffold { padding ->
-    Column(Modifier.fillMaxSize().padding(padding).padding(18.dp)) {
+    Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(padding).padding(18.dp)) {
       Text("Most Nowy", style = MaterialTheme.typography.headlineMedium)
       Text("Photos Cleaner", style = MaterialTheme.typography.titleLarge)
       Spacer(Modifier.height(8.dp))
@@ -144,8 +143,8 @@ private fun CleanerScreen() {
         ) {
           Text(if (groups.flatMap { it.items.drop(1) }.isNotEmpty() && selected.size == groups.flatMap { it.items.drop(1) }.size) "Odznacz wszystkie" else "Zaznacz wszystkie kopie")
         }
-        LazyColumn(Modifier.weight(1f)) {
-          items(groups) { group ->
+        Column(Modifier.fillMaxWidth()) {
+          groups.forEach { group ->
             Card(Modifier.fillMaxWidth().padding(vertical = 5.dp)) {
               Column(Modifier.padding(12.dp)) {
                 Text("Identyczne kopie: ${group.items.size}", style = MaterialTheme.typography.titleSmall)
