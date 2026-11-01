@@ -57,33 +57,33 @@ private fun CleanerScreen() {
     }
   }
 
+  fun startScan() {
+    scope.launch {
+      scanning = true
+      status = "Skanuję pliki i porównuję ich zawartość..."
+      try {
+        val result = withContext(Dispatchers.IO) { scanPhotos(context) }
+        scanned = result.first
+        groups = result.second
+        selected = emptySet()
+        status = "Skanowanie zakończone. Wykryto ${result.first} zdjęć i ${result.second.size} grup identycznych kopii."
+      } catch (e: Exception) {
+        status = "Błąd skanowania: ${e.localizedMessage ?: "nieznany błąd"}"
+      } finally { scanning = false }
+    }
+  }
+
+  val permissionLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { grants ->
+    if (grants.values.any { it }) startScan()
+    else status = "Brak zgody na dostęp do zdjęć. Nie zeskanowano biblioteki."
+  }
+
   fun requestScan() {
     val permissions = if (Build.VERSION.SDK_INT >= 34) arrayOf(Manifest.permission.READ_MEDIA_IMAGES, Manifest.permission.READ_MEDIA_VISUAL_USER_SELECTED)
       else if (Build.VERSION.SDK_INT >= 33) arrayOf(Manifest.permission.READ_MEDIA_IMAGES)
       else arrayOf(Manifest.permission.READ_EXTERNAL_STORAGE)
     val missing = permissions.filter { ContextCompat.checkSelfPermission(context, it) != PackageManager.PERMISSION_GRANTED }
-    if (missing.isNotEmpty()) {
-      permissionLauncher.launch(missing.toTypedArray())
-    } else {
-      scope.launch {
-        scanning = true
-        status = "Skanuję pliki i porównuję ich zawartość..."
-        try {
-          val result = withContext(Dispatchers.IO) { scanPhotos(context) }
-          scanned = result.first
-          groups = result.second
-          selected = emptySet()
-          status = "Skanowanie zakończone. Wykryto ${result.first} zdjęć i ${result.second.size} grup identycznych kopii."
-        } catch (e: Exception) {
-          status = "Błąd skanowania: ${e.localizedMessage ?: "nieznany błąd"}"
-        } finally { scanning = false }
-      }
-    }
-  }
-
-  val permissionLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { grants ->
-    if (grants.values.any { it }) requestScan()
-    else status = "Brak zgody na dostęp do zdjęć. Nie zeskanowano biblioteki."
+    if (missing.isNotEmpty()) permissionLauncher.launch(missing.toTypedArray()) else startScan()
   }
 
   fun trashSelected() {

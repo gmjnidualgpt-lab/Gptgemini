@@ -3,6 +3,8 @@ name: Build Photos Cleaner APK
 on:
   push:
     branches: [ "test/chatgpt-write-access" ]
+  pull_request:
+    branches: [ "main" ]
   workflow_dispatch:
 
 permissions:
