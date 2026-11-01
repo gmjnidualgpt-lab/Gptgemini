@@ -15,6 +15,8 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.IntentSenderRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.*
+import androidx.compose.ui.layout.ContentScale
+import coil.compose.AsyncImage
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.*
@@ -121,6 +123,15 @@ private fun CleanerScreen() {
       if (groups.isNotEmpty()) {
         Text("Znalezione grupy: ${groups.size}", style = MaterialTheme.typography.titleMedium)
         Text("W każdej grupie pierwsze zdjęcie jest zachowywane. Zaznacz tylko dodatkowe kopie.")
+        OutlinedButton(
+          onClick = {
+            val allExtraCopies = groups.flatMap { it.items.drop(1) }.map { it.uri.toString() }.toSet()
+            selected = if (selected.containsAll(allExtraCopies)) emptySet() else allExtraCopies
+          },
+          modifier = Modifier.fillMaxWidth()
+        ) {
+          Text(if (groups.flatMap { it.items.drop(1) }.isNotEmpty() && selected.size == groups.flatMap { it.items.drop(1) }.size) "Odznacz wszystkie" else "Zaznacz wszystkie kopie")
+        }
         LazyColumn(Modifier.weight(1f)) {
           items(groups) { group ->
             Card(Modifier.fillMaxWidth().padding(vertical = 5.dp)) {
@@ -128,6 +139,12 @@ private fun CleanerScreen() {
                 Text("Identyczne kopie: ${group.items.size}", style = MaterialTheme.typography.titleSmall)
                 group.items.forEachIndexed { index, item ->
                   Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
+                    AsyncImage(
+                      model = item.uri,
+                      contentDescription = item.name,
+                      modifier = Modifier.size(64.dp).padding(end = 8.dp),
+                      contentScale = ContentScale.Crop
+                    )
                     if (index == 0) {
                       Text("ZACHOWAJ", modifier = Modifier.width(92.dp), style = MaterialTheme.typography.labelMedium)
                     } else {
