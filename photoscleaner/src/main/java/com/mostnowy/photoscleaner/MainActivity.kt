@@ -36,6 +36,7 @@ import java.security.MessageDigest
 
 data class PhotoItem(val uri: Uri, val name: String, val size: Long, val date: Long, val hash: String)
 data class DuplicateGroup(val hash: String, val items: List<PhotoItem>)
+data class CloudItem(val id: String, val label: String)
 
 class MainActivity : ComponentActivity() {
   override fun onCreate(savedInstanceState: Bundle?) {
@@ -56,7 +57,8 @@ private fun CleanerScreen() {
   var scanned by remember { mutableIntStateOf(0) }
   var cloudSession by remember { mutableStateOf("") }
   var cloudStatus by remember { mutableStateOf("Połącz konto Google i wklej kod sesji.") }
-  var cloudItems by remember { mutableStateOf<List<String>>(emptyList()) }
+  var cloudItems by remember { mutableStateOf<List<CloudItem>>(emptyList()) }
+  var selectedCloudIds by remember { mutableStateOf<Set<String>>(emptySet()) }
   var cloudBusy by remember { mutableStateOf(false) }
   var cloudTab by remember { mutableIntStateOf(0) }
 
@@ -195,18 +197,94 @@ private fun CleanerScreen() {
         cloudBusy = true
         scope.launch { try {
           val data = withContext(Dispatchers.IO) { fetchCloud(cloudSession, if (cloudTab == 0) "/api/drive/files" else "/api/gmail/messages") }
-          cloudItems = if (cloudTab == 0) { val arr = data.optJSONArray("files") ?: JSONArray(); (0 until arr.length()).map { i -> val f=arr.getJSONObject(i); f.optString("name")+" | "+f.optString("size","?")+" B | MD5: "+f.optString("md5Checksum","brak") } } else { val arr=data.optJSONArray("messages") ?: JSONArray(); (0 until arr.length()).map { i -> "Wiadomość ID: "+arr.getJSONObject(i).optString("id") } }
-          cloudStatus = "Pobrano "+cloudItems.size+" pozycji. Niczego nie usunięto."
+          cloudItems = if (cloudTab == 0) {
+            val arr = data.optJSONArray("files") ?: JSONArray()
+            (0 until arr.length()).map { i ->
+              val f = arr.getJSONObject(i)
+              CloudItem(f.optString("id"), f.optString("name", "Bez nazwy") + " | " + f.optString("mimeType", "plik") + " | " + f.optString("size", "?") + " B")
+            }
+          } else {
+            val arr = data.optJSONArray("messages") ?: JSONArray()
+            withContext(Dispatchers.IO) {
+              (0 until arr.length()).map { i ->
+                val id = arr.getJSONObject(i).optString("id")
+                try {
+                  val detail = fetchCloud(cloudSession, "/api/gmail/message?id=" + id)
+                  val headers = detail.optJSONObject("payload")?.optJSONArray("headers")
+                  fun header(name: String): String {
+                    if (headers == null) return ""
+                    for (j in 0 until headers.length()) {
+                      val h = headers.getJSONObject(j)
+                      if (h.optString("name").equals(name, true)) return h.optString("value")
+                    }
+                    return ""
+                  }
+                  CloudItem(id, header("From").ifBlank { "Nieznany nadawca" } + " | " + header("Subject").ifBlank { "(bez tematu)" } + " | " + header("Date"))
+                } catch (e: Exception) { CloudItem(id, "Nie udało się pobrać szczegółów wiadomości") }
+              }
+            }
+          }
+          selectedCloudIds = emptySet()
+          cloudStatus = "Pobrano " + cloudItems.size + " pozycji. Zaznacz pozycje do przeniesienia do kosza."
         } catch(e:Exception) { cloudStatus = "Błąd: "+(e.message ?: "nieznany") } finally { cloudBusy=false } }
       }, enabled = !cloudBusy, modifier = Modifier.fillMaxWidth()) { Text(if (cloudBusy) "Pobieranie..." else "Pobierz listę") }
       Text(cloudStatus, style = MaterialTheme.typography.bodySmall)
-      cloudItems.forEach { Text(it, style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(vertical = 3.dp)) }
-      Text("Podgląd list Drive i Gmail. Usuwanie nie jest automatyczne.", style = MaterialTheme.typography.bodySmall)
+      if (cloudItems.isNotEmpty()) {
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+          Text("Zaznaczono: " + selectedCloudIds.size)
+          TextButton(onClick = {
+            selectedCloudIds = if (selectedCloudIds.size == cloudItems.size) emptySet() else cloudItems.map { it.id }.toSet()
+          }) { Text(if (selectedCloudIds.size == cloudItems.size) "Odznacz wszystkie" else "Zaznacz wszystkie") }
+        }
+        cloudItems.forEach { item ->
+          Row(Modifier.fillMaxWidth(), verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
+            Checkbox(checked = item.id in selectedCloudIds, onCheckedChange = { checked ->
+              selectedCloudIds = if (checked) selectedCloudIds + item.id else selectedCloudIds - item.id
+            })
+            Text(item.label, style = MaterialTheme.typography.bodySmall, modifier = Modifier.weight(1f))
+          }
+        }
+        Button(onClick = {
+          if (selectedCloudIds.isEmpty()) { cloudStatus = "Najpierw zaznacz pozycje."; return@Button }
+          cloudBusy = true
+          scope.launch {
+            try {
+              val result = withContext(Dispatchers.IO) {
+                trashCloud(cloudSession, if (cloudTab == 0) "/api/drive/trash" else "/api/gmail/trash", selectedCloudIds.toList())
+              }
+              val arr = result.optJSONArray("results") ?: JSONArray()
+              var ok = 0
+              for (i in 0 until arr.length()) if (arr.getJSONObject(i).optBoolean("ok")) ok++
+              cloudStatus = "Przeniesiono do kosza: " + ok + " z " + arr.length() + "."
+              selectedCloudIds = emptySet()
+            } catch (e: Exception) { cloudStatus = "Błąd przenoszenia: " + (e.message ?: "nieznany") }
+            finally { cloudBusy = false }
+          }
+        }, enabled = !cloudBusy && selectedCloudIds.isNotEmpty(), modifier = Modifier.fillMaxWidth()) {
+          Text(if (cloudBusy) "Przenoszenie..." else "Przenieś zaznaczone do kosza")
+        }
+      }
+      Text("Pozycje są przenoszone do kosza Google dopiero po Twoim wyborze.", style = MaterialTheme.typography.bodySmall)
     }
   }
 }
 
 private const val WORKER_URL = "https://google-drive-cleaner-ai.arobert9944.workers.dev"
+
+private fun trashCloud(session: String, path: String, ids: List<String>): JSONObject {
+  val c = URL(WORKER_URL + path).openConnection() as HttpURLConnection
+  c.requestMethod = "POST"
+  c.connectTimeout = 15000
+  c.readTimeout = 60000
+  c.doOutput = true
+  c.setRequestProperty("Authorization", "Bearer " + session)
+  c.setRequestProperty("Content-Type", "application/json")
+  c.outputStream.use { it.write(JSONObject().put("ids", JSONArray(ids)).toString().toByteArray(Charsets.UTF_8)) }
+  val status = c.responseCode
+  val body = (if (status in 200..299) c.inputStream else c.errorStream).bufferedReader().use { it.readText() }
+  if (status !in 200..299) throw IllegalStateException("HTTP " + status + ": " + body)
+  return JSONObject(body)
+}
 
 private fun fetchCloud(session: String, path: String): JSONObject {
   val c = URL(WORKER_URL + path).openConnection() as HttpURLConnection
